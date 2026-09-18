@@ -1,0 +1,2681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>FTC Driving Simulator</title>
+
+<style>
+*{box-sizing:border-box}
+
+html,body{
+  margin:0;
+  width:100%;
+  height:100%;
+  overflow:hidden;
+  background:#111;
+  font-family:Arial,Helvetica,sans-serif;
+}
+
+#top{
+  height:56px;
+  background:#171717;
+  border-bottom:1px solid #333;
+  display:flex;
+  align-items:center;
+  gap:26px;
+  padding:0 18px;
+}
+
+#title{
+  font-weight:bold;
+  letter-spacing:.5px;
+}
+
+#blueScore{
+  color:#4e7cff;
+  font-weight:bold;
+}
+
+#balls{
+  font-weight:bold;
+}
+
+#hiveStatus{
+  color:#aaa;
+}
+
+#controller{
+  color:#777;
+}
+
+canvas{
+  display:block;
+  width:100vw;
+  height:calc(100vh - 56px);
+}
+
+#help{
+  position:fixed;
+  left:14px;
+  bottom:12px;
+  background:#171717;
+  border:1px solid #333;
+  border-radius:6px;
+  padding:9px 13px;
+  color:#aaa;
+  font-size:13px;
+}
+</style>
+</head>
+
+<body>
+
+<div id="top">
+
+  <div id="title">
+    BIOBUZZ • BLUE
+  </div>
+
+  <div id="blueScore">
+    BLUE 0
+  </div>
+
+  <div id="balls">
+    BALLS 0 / 4
+  </div>
+
+  <div id="hiveStatus">
+    BLUE HIVE: 0 / 3
+  </div>
+
+  <div id="controller">
+    Keyboard
+  </div>
+
+</div>
+
+<canvas id="canvas"></canvas>
+
+<div id="help">
+  W/S drive • A/D strafe • Q/E rotate • SPACE intake • F shoot • R reset
+</div>
+
+<script>
+
+/* =========================================================
+   CANVAS
+========================================================= */
+
+const canvas =
+  document.getElementById("canvas");
+
+const ctx =
+  canvas.getContext("2d");
+
+let W=0;
+let H=0;
+let DPR=1;
+
+function resize(){
+
+  DPR =
+    window.devicePixelRatio || 1;
+
+  W =
+    window.innerWidth;
+
+  H =
+    Math.max(
+      1,
+      window.innerHeight - 56
+    );
+
+  canvas.width =
+    W * DPR;
+
+  canvas.height =
+    H * DPR;
+
+  canvas.style.width =
+    W + "px";
+
+  canvas.style.height =
+    H + "px";
+
+  ctx.setTransform(
+    DPR,0,0,DPR,0,0
+  );
+}
+
+window.addEventListener(
+  "resize",
+  resize
+);
+
+resize();
+
+
+/* =========================================================
+   CONSTANTS
+========================================================= */
+
+const FIELD_SIZE = 12;
+
+const ROBOT_SIZE = 1.5;
+
+const MAX_BALLS = 4;
+
+const TOTAL_BALLS = 40;
+
+const HIVE_TIP_SHOTS = 8;
+
+const HIVE_TIP_POINTS = 20;
+
+
+/* =========================================================
+   KEYBOARD
+========================================================= */
+
+const keys={};
+
+window.addEventListener(
+  "keydown",
+  e=>{
+
+    keys[e.code]=true;
+
+    if(
+      e.code==="Space" ||
+      e.code.startsWith("Arrow")
+    ){
+      e.preventDefault();
+    }
+
+    if(e.code==="KeyR"){
+      reset();
+    }
+  }
+);
+
+window.addEventListener(
+  "keyup",
+  e=>{
+    keys[e.code]=false;
+  }
+);
+
+
+/* =========================================================
+   ROBOT
+========================================================= */
+
+const robot={
+
+  x:6,
+
+  y:8.7,
+
+  angle:0,
+
+  vx:0,
+
+  vy:0,
+
+  balls:0
+
+};
+
+
+/* =========================================================
+   BLUE PLAYER STATE
+========================================================= */
+
+const blue={
+
+  score:0,
+
+  hiveHits:0,
+
+  hiveTips:0
+
+};
+
+
+/* =========================================================
+   HIVES
+========================================================= */
+
+const redHive={
+
+  x:5.35,
+
+  y:6,
+
+  angle:0,
+
+  target:0,
+
+  tipping:false,
+
+  tipped:false,
+
+  hits:0
+
+};
+
+const blueHive={
+
+  x:6.65,
+
+  y:6,
+
+  angle:0,
+
+  target:0,
+
+  tipping:false,
+
+  tipped:false,
+
+  hits:0
+
+};
+
+
+/* =========================================================
+   BALLS
+========================================================= */
+
+let balls=[];
+
+function createBalls(){
+
+  balls=[];
+
+  const positions=[
+
+    [1.1,1.2],
+    [1.9,1.5],
+    [2.8,1.1],
+    [3.7,1.6],
+
+    [8.2,1.2],
+    [9.0,1.6],
+    [10.0,1.2],
+    [10.8,1.9],
+
+    [1.2,3.0],
+    [2.0,3.5],
+    [3.0,2.8],
+    [4.0,3.4],
+
+    [8.0,3.0],
+    [9.0,3.5],
+    [10.0,3.0],
+    [10.8,3.7],
+
+    [1.1,4.9],
+    [2.1,5.4],
+    [3.0,4.8],
+    [4.0,5.3],
+
+    [8.0,4.9],
+    [9.0,4.7],
+    [10.0,5.4],
+    [10.8,5.0],
+
+    [1.1,6.9],
+    [2.0,7.4],
+    [3.0,6.9],
+    [4.0,7.6],
+
+    [8.0,6.9],
+    [9.0,7.5],
+    [10.0,6.9],
+    [10.8,7.7],
+
+    [1.2,9.1],
+    [2.0,9.9],
+    [3.0,9.3],
+    [4.0,10.1],
+
+    [8.0,9.2],
+    [9.0,10.0],
+    [10.0,9.2],
+    [10.8,10.1]
+
+  ];
+
+  for(
+    const p of positions
+  ){
+
+    balls.push({
+
+      x:p[0],
+
+      y:p[1],
+
+      vx:0,
+
+      vy:0,
+
+      held:false,
+
+      flying:false,
+
+      hiveStored:false,
+
+      r:.14,
+
+      age:0
+
+    });
+
+  }
+}
+
+
+/* =========================================================
+   RESET
+========================================================= */
+
+function reset(){
+
+  robot.x=6;
+  robot.y=8.7;
+
+  robot.angle=0;
+
+  robot.vx=0;
+  robot.vy=0;
+
+  robot.balls=0;
+
+  blue.score=0;
+  blue.hiveHits=0;
+  blue.hiveTips=0;
+
+  resetHive(blueHive);
+  resetHive(redHive);
+
+  createBalls();
+
+  updateUI();
+}
+
+function resetHive(hive){
+
+  hive.angle=0;
+  hive.target=0;
+  hive.tipping=false;
+  hive.tipped=false;
+  hive.hits=0;
+
+}
+
+
+/* =========================================================
+   FIELD
+========================================================= */
+
+function getField(){
+
+  const margin=42;
+
+  /*
+    FIX:
+    Never allow the field size or scale
+    to become negative.
+  */
+
+  const availableWidth =
+    Math.max(
+      1,
+      W - margin*2
+    );
+
+  const availableHeight =
+    Math.max(
+      1,
+      H - margin*2
+    );
+
+  const size =
+    Math.max(
+      1,
+      Math.min(
+        availableWidth,
+        availableHeight
+      )
+    );
+
+  return{
+
+    x:(W-size)/2,
+
+    y:(H-size)/2,
+
+    size:size,
+
+    s:Math.max(
+      0.0001,
+      size/FIELD_SIZE
+    )
+
+  };
+}
+
+function worldToScreen(x,y){
+
+  const f=
+    getField();
+
+  return{
+
+    x:f.x+x*f.s,
+
+    y:f.y+y*f.s
+
+  };
+}
+
+
+/* =========================================================
+   ROTATE POINT
+========================================================= */
+
+function rotatePoint(x,y,angle){
+
+  return{
+
+    x:
+      x*Math.cos(angle) -
+      y*Math.sin(angle),
+
+    y:
+      x*Math.sin(angle) +
+      y*Math.cos(angle)
+
+  };
+
+}
+
+
+/* =========================================================
+   NORMALIZE ANGLE
+========================================================= */
+
+function normalizeAngle(angle){
+
+  while(angle > Math.PI){
+
+    angle -=
+      Math.PI*2;
+
+  }
+
+  while(angle < -Math.PI){
+
+    angle +=
+      Math.PI*2;
+
+  }
+
+  return angle;
+
+}
+
+
+/* =========================================================
+   CONTROLLER
+========================================================= */
+
+let controllerConnected=false;
+
+function getController(){
+
+  if(
+    !navigator.getGamepads
+  ){
+
+    return null;
+
+  }
+
+  const pads=
+    navigator.getGamepads();
+
+  for(
+    let i=0;
+    i<pads.length;
+    i++
+  ){
+
+    if(pads[i]){
+
+      return pads[i];
+
+    }
+
+  }
+
+  return null;
+
+}
+
+
+function controllerInput(){
+
+  const gp=
+    getController();
+
+  if(!gp){
+
+    controllerConnected=false;
+
+    return{
+
+      strafe:0,
+
+      forward:0,
+
+      rotate:0,
+
+      intake:false,
+
+      shoot:false,
+
+      reset:false
+
+    };
+
+  }
+
+  controllerConnected=true;
+
+  const dead=.13;
+
+  let lx=
+    gp.axes.length>0 ?
+    gp.axes[0] : 0;
+
+  let ly=
+    gp.axes.length>1 ?
+    gp.axes[1] : 0;
+
+  let rx=
+    gp.axes.length>2 ?
+    gp.axes[2] : 0;
+
+
+  if(
+    Math.abs(lx)<dead
+  ){
+
+    lx=0;
+
+  }
+
+  if(
+    Math.abs(ly)<dead
+  ){
+
+    ly=0;
+
+  }
+
+  if(
+    Math.abs(rx)<dead
+  ){
+
+    rx=0;
+
+  }
+
+
+  const A=
+    !!gp.buttons[0]?.pressed;
+
+  const B=
+    !!gp.buttons[1]?.pressed;
+
+  const X=
+    !!gp.buttons[2]?.pressed;
+
+  const LB=
+    !!gp.buttons[4]?.pressed;
+
+  const RB=
+    !!gp.buttons[5]?.pressed;
+
+
+  return{
+
+    strafe:lx,
+
+    forward:-ly,
+
+    rotate:rx,
+
+    intake:
+      X || LB,
+
+    shoot:
+      A || RB,
+
+    reset:B
+
+  };
+
+}
+
+
+/* =========================================================
+   UPDATE INPUT
+========================================================= */
+
+let lastControllerShoot=false;
+
+let lastControllerReset=false;
+
+function getInput(){
+
+  let strafe=0;
+
+  let forward=0;
+
+  let rotate=0;
+
+  let intake=false;
+
+  let shoot=false;
+
+
+  if(keys.KeyA)
+    strafe-=1;
+
+  if(keys.KeyD)
+    strafe+=1;
+
+  if(keys.KeyW)
+    forward+=1;
+
+  if(keys.KeyS)
+    forward-=1;
+
+  if(keys.KeyQ)
+    rotate-=1;
+
+  if(keys.KeyE)
+    rotate+=1;
+
+  intake=
+    !!keys.Space;
+
+  shoot=
+    !!keys.KeyF;
+
+
+  const c=
+    controllerInput();
+
+
+  if(controllerConnected){
+
+    strafe=
+      c.strafe;
+
+    forward=
+      c.forward;
+
+    rotate=
+      c.rotate;
+
+    intake=
+      c.intake;
+
+    shoot=
+      c.shoot;
+
+
+    if(
+      c.reset &&
+      !lastControllerReset
+    ){
+
+      reset();
+
+    }
+
+    lastControllerReset=
+      c.reset;
+
+  }
+
+
+  document.getElementById(
+    "controller"
+  ).textContent=
+    controllerConnected ?
+    "Controller connected" :
+    "Keyboard";
+
+
+  return{
+
+    strafe,
+
+    forward,
+
+    rotate,
+
+    intake,
+
+    shoot
+
+  };
+
+}
+
+
+/* =========================================================
+   ROBOT MOVEMENT
+========================================================= */
+
+function clampRobot(){
+
+  const h=
+    ROBOT_SIZE/2;
+
+  robot.x=
+    Math.max(
+      h,
+      Math.min(
+        FIELD_SIZE-h,
+        robot.x
+      )
+    );
+
+  robot.y=
+    Math.max(
+      h,
+      Math.min(
+        FIELD_SIZE-h,
+        robot.y
+      )
+    );
+
+}
+
+
+/* =========================================================
+   INTAKE
+========================================================= */
+
+function intakeBalls(active){
+
+  if(!active)
+    return;
+
+  if(
+    robot.balls>=MAX_BALLS
+  )
+    return;
+
+
+  for(
+    let i=balls.length-1;
+    i>=0;
+    i--
+  ){
+
+    const b=
+      balls[i];
+
+    if(
+      b.held ||
+      b.flying
+    )
+      continue;
+
+
+    const dx=
+      b.x-robot.x;
+
+    const dy=
+      b.y-robot.y;
+
+
+    const c=
+      Math.cos(
+        -robot.angle
+      );
+
+    const s=
+      Math.sin(
+        -robot.angle
+      );
+
+
+    const localX=
+      dx*c-dy*s;
+
+    const localY=
+      dx*s+dy*c;
+
+
+    if(
+
+      localY>-0.05 &&
+
+      localY<
+        ROBOT_SIZE/2+.6 &&
+
+      Math.abs(localX)<.52
+
+    ){
+
+      balls.splice(
+        i,
+        1
+      );
+
+      robot.balls++;
+
+
+      if(
+        robot.balls>=MAX_BALLS
+      ){
+
+        break;
+
+      }
+
+    }
+
+  }
+
+}
+
+
+/* =========================================================
+   HELD BALLS
+========================================================= */
+
+function updateHeldBalls(){
+
+}
+
+
+/* =========================================================
+   SHOOT
+========================================================= */
+
+let previousShoot=false;
+
+function shoot(){
+
+  if(
+    robot.balls<=0
+  )
+    return;
+
+
+  const front=
+    rotatePoint(
+      0,
+      ROBOT_SIZE/2+.16,
+      robot.angle
+    );
+
+
+  const b={
+
+    x:
+      robot.x+
+      front.x,
+
+    y:
+      robot.y+
+      front.y,
+
+    vx:0,
+
+    vy:0,
+
+    held:false,
+
+    flying:true,
+
+    hiveStored:false,
+
+    r:.14,
+
+    age:0
+
+  };
+
+
+  const dx=
+    Math.sin(
+      robot.angle
+    );
+
+  const dy=
+    -Math.cos(
+      robot.angle
+    );
+
+
+  b.vx=
+    dx*6.8+
+    robot.vx;
+
+  b.vy=
+    dy*6.8+
+    robot.vy;
+
+
+  balls.push(b);
+
+  robot.balls--;
+
+}
+
+
+/* =========================================================
+   HIVE CELL GEOMETRY
+========================================================= */
+
+function getCells(hive){
+
+  const separation=.82;
+
+
+  const a=
+    rotatePoint(
+      0,
+      -separation,
+      hive.angle
+    );
+
+
+  const b=
+    rotatePoint(
+      0,
+      separation,
+      hive.angle
+    );
+
+
+  return[
+
+    {
+
+      x:
+        hive.x+a.x,
+
+      y:
+        hive.y+a.y,
+
+      angle:
+        hive.angle
+
+    },
+
+    {
+
+      x:
+        hive.x+b.x,
+
+      y:
+        hive.y+b.y,
+
+      angle:
+        hive.angle+Math.PI
+
+    }
+
+  ];
+
+}
+
+
+/* =========================================================
+   HIVE HIT DETECTION
+========================================================= */
+
+function checkHiveHit(b){
+
+  if(!b.flying || b.hiveReleased)
+    return;
+
+
+  const hive=
+    blueHive;
+
+
+  if(
+    hive.tipping
+  )
+    return;
+
+
+  const cells=
+    getCells(hive);
+
+
+  for(
+    const cell of cells
+  ){
+
+    const dirX=
+      Math.sin(
+        cell.angle
+      );
+
+    const dirY=
+      -Math.cos(
+        cell.angle
+      );
+
+
+    const speed=
+      Math.hypot(
+        b.vx,
+        b.vy
+      );
+
+
+    if(
+      speed<.5
+    )
+      continue;
+
+
+    const velocityDot=
+      (
+        b.vx*dirX+
+        b.vy*dirY
+      )/speed;
+
+
+    const dist=
+      Math.hypot(
+        b.x-cell.x,
+        b.y-cell.y
+      );
+
+
+    if(
+
+      dist<.48 &&
+
+      velocityDot>.25
+
+    ){
+
+      b.flying=false;
+
+      b.vx=0;
+
+      b.vy=0;
+
+      /* Store the ball in the hive instead of permanently hiding it. */
+      b.hiveStored=true;
+      b.hiveCellAngle=cell.angle;
+      hive.tipped=false;
+      b.hiveReleased=false;
+      b.x=-10;
+      b.y=-10;
+
+
+      hive.hits++;
+
+      blue.hiveHits++;
+
+
+      if(
+        hive.hits>=
+        HIVE_TIP_SHOTS
+      ){
+
+        tipBlueHive();
+
+      }
+
+
+      return;
+
+    }
+
+  }
+
+}
+
+
+/* =========================================================
+   TIP BLUE HIVE
+========================================================= */
+
+function tipBlueHive(){
+
+  if(
+    blueHive.tipping ||
+    blueHive.tipped
+  )
+    return;
+
+
+  blueHive.tipping=true;
+
+
+  blueHive.target=
+    blueHive.angle===0 ?
+    Math.PI :
+    0;
+
+}
+
+
+/* =========================================================
+   COMPLETE BLUE TIP
+========================================================= */
+
+function completeBlueTip(){
+
+  blueHive.tipping=false;
+
+  blueHive.tipped=true;
+
+  blueHive.angle=
+    blueHive.target;
+
+
+  blue.score +=
+    HIVE_TIP_POINTS;
+
+  blue.hiveTips++;
+
+
+  /*
+    Release every ball that was actually scored into the hive.
+    Those balls are normally parked at -10,-10, so checking their
+    distance from the hive can never work. Human geometry: defeated.
+  */
+
+  const cells=getCells(blueHive);
+  const stored=balls.filter(b => b.hiveStored);
+
+  stored.forEach((b,i)=>{
+
+    const cell=cells[i % cells.length];
+
+    const outX=Math.sin(cell.angle);
+    const outY=-Math.cos(cell.angle);
+
+    /* Spread the released balls around the two openings so all of them
+       are visible instead of stacking directly on top of each other. */
+    const sideX=-outY;
+    const sideY=outX;
+    const slot=Math.floor(i / cells.length);
+    const sideOffset=(slot-1.5)*.18;
+
+    b.x=cell.x + outX*.22 + sideX*sideOffset;
+    b.y=cell.y + outY*.22 + sideY*sideOffset;
+
+    b.vx=outX*2.8 + sideX*(sideOffset*1.5);
+    b.vy=outY*2.8 + sideY*(sideOffset*1.5);
+    b.flying=true;
+    b.hiveStored=false;
+    b.hiveReleased=true;
+    b.age=0;
+
+  });
+
+
+  blueHive.hits=0;
+  blue.hiveHits=0;
+
+}
+
+
+/* =========================================================
+   HIVE ANIMATION
+========================================================= */
+
+function updateHives(dt){
+
+  if(
+    blueHive.tipping
+  ){
+
+    const difference=
+      normalizeAngle(
+        blueHive.target-
+        blueHive.angle
+      );
+
+
+    const step=
+      2.6*dt;
+
+
+    if(
+      Math.abs(
+        difference
+      )<=step
+    ){
+
+      blueHive.angle=
+        blueHive.target;
+
+      completeBlueTip();
+
+    }
+    else{
+
+      blueHive.angle +=
+        Math.sign(
+          difference
+        )*step;
+
+    }
+
+  }
+
+}
+
+
+/* =========================================================
+   BALL PHYSICS
+========================================================= */
+
+function updateBalls(dt){
+
+  for(
+    const b of balls
+  ){
+
+    if(b.held)
+      continue;
+
+    if(!b.flying)
+      continue;
+
+
+    b.x +=
+      b.vx*dt;
+
+    b.y +=
+      b.vy*dt;
+
+
+    b.vx*=.995;
+
+    b.vy*=.995;
+
+
+    b.age+=dt;
+
+    if(b.hiveReleased && b.age>.45)
+      b.hiveReleased=false;
+
+
+    if(
+
+      b.x<.16 ||
+
+      b.x>
+        FIELD_SIZE-.16
+
+    ){
+
+      b.vx*=-.72;
+
+      b.x=
+        Math.max(
+          .16,
+          Math.min(
+            FIELD_SIZE-.16,
+            b.x
+          )
+        );
+
+    }
+
+
+    if(
+
+      b.y<.16 ||
+
+      b.y>
+        FIELD_SIZE-.16
+
+    ){
+
+      b.vy*=-.72;
+
+      b.y=
+        Math.max(
+          .16,
+          Math.min(
+            FIELD_SIZE-.16,
+            b.y
+          )
+        );
+
+    }
+
+
+    checkHiveHit(b);
+
+
+    if(
+
+      b.age>10 &&
+
+      b.flying
+
+    ){
+
+      b.flying=false;
+
+      b.x=
+        1+
+        Math.random()*10;
+
+      b.y=
+        1+
+        Math.random()*10;
+
+      b.vx=0;
+
+      b.vy=0;
+
+      b.age=0;
+
+    }
+
+  }
+
+}
+
+
+/* =========================================================
+   MAIN UPDATE
+========================================================= */
+
+function update(dt){
+
+  const input=
+    getInput();
+
+
+  const maxSpeed=6.7;
+
+  const acceleration=9;
+
+
+  const targetStrafe=
+    input.strafe*
+    maxSpeed;
+
+  const targetForward=
+    input.forward*
+    maxSpeed;
+
+
+  const c=
+    Math.cos(
+      robot.angle
+    );
+
+  const s=
+    Math.sin(
+      robot.angle
+    );
+
+
+  const worldX=
+    targetStrafe*c+
+    targetForward*s;
+
+  const worldY=
+    targetStrafe*s-
+    targetForward*c;
+
+
+  robot.vx +=
+    (
+      worldX-
+      robot.vx
+    )*
+    Math.min(
+      1,
+      acceleration*dt
+    );
+
+
+  robot.vy +=
+    (
+      worldY-
+      robot.vy
+    )*
+    Math.min(
+      1,
+      acceleration*dt
+    );
+
+
+  robot.x +=
+    robot.vx*dt;
+
+  robot.y +=
+    robot.vy*dt;
+
+
+  robot.angle +=
+    input.rotate*
+    3.3*
+    dt;
+
+
+  clampRobot();
+
+
+  intakeBalls(
+    input.intake
+  );
+
+
+  if(
+
+    input.shoot &&
+
+    !previousShoot
+
+  ){
+
+    shoot();
+
+  }
+
+  previousShoot=
+    input.shoot;
+
+
+  updateHeldBalls();
+
+  updateBalls(dt);
+
+  updateHives(dt);
+
+  updateUI();
+
+}
+
+
+/* =========================================================
+   UI
+========================================================= */
+
+function updateUI(){
+
+  document.getElementById(
+    "blueScore"
+  ).textContent=
+    "BLUE " +
+    blue.score;
+
+
+  document.getElementById(
+    "balls"
+  ).textContent=
+    "BALLS " +
+    robot.balls +
+    " / " +
+    MAX_BALLS;
+
+
+  document.getElementById(
+    "hiveStatus"
+  ).textContent=
+    blueHive.tipping ?
+
+    "BLUE HIVE: TIPPING" :
+
+    "BLUE HIVE: " +
+    blueHive.hits +
+    " / " +
+    HIVE_TIP_SHOTS +
+    " • TIPS " +
+    blue.hiveTips;
+
+}
+
+
+/* =========================================================
+   FIELD DRAWING
+========================================================= */
+
+function drawField(){
+
+  const f=
+    getField();
+
+
+  ctx.fillStyle="#111";
+
+  ctx.fillRect(
+    0,
+    0,
+    W,
+    H
+  );
+
+
+  ctx.fillStyle="#777";
+
+  ctx.fillRect(
+    f.x,
+    f.y,
+    f.size,
+    f.size
+  );
+
+
+  ctx.strokeStyle="#999";
+
+  ctx.lineWidth=1;
+
+
+  for(
+    let i=0;
+    i<=6;
+    i++
+  ){
+
+    const x=
+      f.x+
+      i*2*f.s;
+
+    const y=
+      f.y+
+      i*2*f.s;
+
+
+    ctx.beginPath();
+
+    ctx.moveTo(
+      x,
+      f.y
+    );
+
+    ctx.lineTo(
+      x,
+      f.y+f.size
+    );
+
+    ctx.stroke();
+
+
+    ctx.beginPath();
+
+    ctx.moveTo(
+      f.x,
+      y
+    );
+
+    ctx.lineTo(
+      f.x+f.size,
+      y
+    );
+
+    ctx.stroke();
+
+  }
+
+
+  ctx.strokeStyle="#222";
+
+  ctx.lineWidth=12;
+
+  ctx.strokeRect(
+    f.x,
+    f.y,
+    f.size,
+    f.size
+  );
+
+
+  ctx.strokeStyle="#444";
+
+  ctx.lineWidth=3;
+
+  ctx.strokeRect(
+    f.x,
+    f.y,
+    f.size,
+    f.size
+  );
+
+
+  const center=
+    worldToScreen(
+      6,
+      6
+    );
+
+
+  /*
+    f.s is now guaranteed positive,
+    so this radius can never be negative.
+  */
+
+  const centerRadius=
+    Math.max(
+      0.01,
+      Math.abs(.65*f.s)
+    );
+
+
+  ctx.strokeStyle="#aaa";
+
+  ctx.lineWidth=1.5;
+
+  ctx.beginPath();
+
+  ctx.arc(
+    center.x,
+    center.y,
+    centerRadius,
+    0,
+    Math.PI*2
+  );
+
+  ctx.stroke();
+
+}
+
+
+/* =========================================================
+   BALL DRAWING
+========================================================= */
+
+function drawBall(b){
+
+  if(b.held)
+    return;
+
+
+  if(
+    b.x<0 ||
+    b.y<0
+  )
+    return;
+
+
+  const p=
+    worldToScreen(
+      b.x,
+      b.y
+    );
+
+
+  const r=
+    Math.max(
+      .01,
+      Math.abs(
+        b.r*
+        getField().s
+      )
+    );
+
+
+  ctx.beginPath();
+
+  ctx.arc(
+    p.x,
+    p.y,
+    r,
+    0,
+    Math.PI*2
+  );
+
+
+  ctx.fillStyle=
+    "#e7b21a";
+
+  ctx.fill();
+
+
+  ctx.strokeStyle=
+    "#654b00";
+
+  ctx.lineWidth=1.5;
+
+  ctx.stroke();
+
+
+  ctx.beginPath();
+
+  ctx.arc(
+    p.x-r*.28,
+    p.y-r*.28,
+    Math.max(
+      .01,
+      r*.18
+    ),
+    0,
+    Math.PI*2
+  );
+
+  ctx.fillStyle=
+    "#ffe889";
+
+  ctx.fill();
+
+}
+
+
+/* =========================================================
+   HIVE STRUCTURE
+========================================================= */
+
+function drawHiveStructure(){
+
+  const f=
+    getField();
+
+
+  const center=
+    worldToScreen(
+      6,
+      6
+    );
+
+
+  const scale=
+    Math.max(
+      .0001,
+      Math.abs(f.s)
+    );
+
+
+  ctx.save();
+
+  ctx.translate(
+    center.x,
+    center.y
+  );
+
+
+  ctx.strokeStyle="#3b3b3b";
+
+  ctx.lineWidth=10;
+
+
+  ctx.beginPath();
+
+  ctx.moveTo(
+    -1.55*scale,
+    1.35*scale
+  );
+
+  ctx.lineTo(
+    -.25*scale,
+    -.15*scale
+  );
+
+  ctx.stroke();
+
+
+  ctx.beginPath();
+
+  ctx.moveTo(
+    1.55*scale,
+    1.35*scale
+  );
+
+  ctx.lineTo(
+    .25*scale,
+    -.15*scale
+  );
+
+  ctx.stroke();
+
+
+  ctx.strokeStyle="#777";
+
+  ctx.lineWidth=6;
+
+
+  ctx.beginPath();
+
+  ctx.moveTo(
+    -1.55*scale,
+    1.35*scale
+  );
+
+  ctx.lineTo(
+    -.6*scale,
+    -.25*scale
+  );
+
+  ctx.stroke();
+
+
+  ctx.beginPath();
+
+  ctx.moveTo(
+    1.55*scale,
+    1.35*scale
+  );
+
+  ctx.lineTo(
+    .6*scale,
+    -.25*scale
+  );
+
+  ctx.stroke();
+
+
+  ctx.strokeStyle="#333";
+
+  ctx.lineWidth=11;
+
+
+  ctx.beginPath();
+
+  ctx.moveTo(
+    -1.1*scale,
+    -.15*scale
+  );
+
+  ctx.lineTo(
+    1.1*scale,
+    -.15*scale
+  );
+
+  ctx.stroke();
+
+
+  ctx.strokeStyle="#888";
+
+  ctx.lineWidth=6;
+
+
+  ctx.beginPath();
+
+  ctx.moveTo(
+    0,
+    -.15*scale
+  );
+
+  ctx.lineTo(
+    0,
+    -1.15*scale
+  );
+
+  ctx.stroke();
+
+
+  ctx.fillStyle="#d8c85b";
+
+  ctx.fillRect(
+    -.55*scale,
+    -.75*scale,
+    1.1*scale,
+    .42*scale
+  );
+
+
+  ctx.strokeStyle="#222";
+
+  ctx.lineWidth=2;
+
+
+  ctx.strokeRect(
+    -.55*scale,
+    -.75*scale,
+    1.1*scale,
+    .42*scale
+  );
+
+
+  ctx.fillStyle="#222";
+
+  ctx.font=
+    "bold 10px Arial";
+
+  ctx.textAlign="center";
+
+
+  ctx.fillText(
+    "BIOBUZZ",
+    0,
+    -.49*scale
+  );
+
+
+  ctx.restore();
+
+
+  drawHive(
+    redHive,
+    "red"
+  );
+
+  drawHive(
+    blueHive,
+    "blue"
+  );
+
+}
+
+
+/* =========================================================
+   DRAW HIVE
+========================================================= */
+
+function drawHive(
+  hive,
+  color
+){
+
+  const p=
+    worldToScreen(
+      hive.x,
+      hive.y
+    );
+
+
+  ctx.save();
+
+  ctx.translate(
+    p.x,
+    p.y
+  );
+
+  ctx.rotate(
+    hive.angle
+  );
+
+
+  ctx.fillStyle="#242424";
+
+  ctx.fillRect(
+    -17,
+    -63,
+    34,
+    126
+  );
+
+
+  ctx.strokeStyle="#111";
+
+  ctx.lineWidth=3;
+
+
+  ctx.strokeRect(
+    -17,
+    -63,
+    34,
+    126
+  );
+
+
+  drawCell(
+    0,
+    -60,
+    color,
+    -Math.PI/2
+  );
+
+  drawCell(
+    0,
+    60,
+    color,
+    Math.PI/2
+  );
+
+
+  ctx.beginPath();
+
+  ctx.arc(
+    0,
+    0,
+    9,
+    0,
+    Math.PI*2
+  );
+
+
+  ctx.fillStyle="#111";
+
+  ctx.fill();
+
+
+  ctx.strokeStyle="#aaa";
+
+  ctx.lineWidth=3;
+
+  ctx.stroke();
+
+
+  if(
+    color==="blue"
+  ){
+
+    ctx.fillStyle="#4e7cff";
+
+    ctx.font=
+      "bold 10px Arial";
+
+    ctx.textAlign="center";
+
+    ctx.fillText(
+      "BLUE",
+      0,
+      4
+    );
+
+  }
+
+
+  ctx.restore();
+
+}
+
+
+/* =========================================================
+   DRAW CELL
+========================================================= */
+
+function drawCell(
+  x,
+  y,
+  color,
+  angle
+){
+
+  ctx.save();
+
+  ctx.translate(
+    x,
+    y
+  );
+
+  ctx.rotate(
+    angle
+  );
+
+
+  const w=55;
+
+  const h=42;
+
+
+  const stroke=
+    color==="blue" ?
+    "#315bd6" :
+    "#c52d2d";
+
+
+  const fill=
+    color==="blue" ?
+    "rgba(49,91,214,.15)" :
+    "rgba(197,45,45,.15)";
+
+
+  ctx.fillStyle=fill;
+
+
+  ctx.fillRect(
+    -w/2,
+    -h/2,
+    w,
+    h
+  );
+
+
+  ctx.strokeStyle=stroke;
+
+  ctx.lineWidth=5;
+
+
+  ctx.strokeRect(
+    -w/2,
+    -h/2,
+    w,
+    h
+  );
+
+
+  ctx.beginPath();
+
+  ctx.moveTo(
+    -w/2,
+    -h/2
+  );
+
+  ctx.lineTo(
+    -w/2-9,
+    h/2+9
+  );
+
+  ctx.lineTo(
+    w/2+9,
+    h/2+9
+  );
+
+  ctx.lineTo(
+    w/2,
+    -h/2
+  );
+
+  ctx.stroke();
+
+
+  ctx.strokeStyle="#777";
+
+  ctx.lineWidth=2;
+
+
+  ctx.beginPath();
+
+  ctx.moveTo(
+    -w/2+8,
+    -h/2+8
+  );
+
+  ctx.lineTo(
+    w/2-8,
+    -h/2+8
+  );
+
+  ctx.stroke();
+
+
+  ctx.fillStyle=stroke;
+
+  ctx.font=
+    "bold 9px Arial";
+
+  ctx.textAlign="center";
+
+
+  ctx.fillText(
+    color.toUpperCase(),
+    0,
+    3
+  );
+
+
+  ctx.restore();
+
+}
+
+
+/* =========================================================
+   ROBOT
+========================================================= */
+
+function drawRobot(){
+
+  const f=
+    getField();
+
+
+  const p=
+    worldToScreen(
+      robot.x,
+      robot.y
+    );
+
+
+  const size=
+    Math.max(
+      .01,
+      ROBOT_SIZE*
+      Math.abs(f.s)
+    );
+
+
+  const half=
+    size/2;
+
+
+  ctx.save();
+
+  ctx.translate(
+    p.x,
+    p.y
+  );
+
+  ctx.rotate(
+    robot.angle
+  );
+
+
+  ctx.fillStyle=
+    "rgba(0,0,0,.35)";
+
+
+  ctx.fillRect(
+    -half+6,
+    -half+7,
+    size,
+    size
+  );
+
+
+  ctx.fillStyle="#202020";
+
+
+  ctx.fillRect(
+    -half,
+    -half,
+    size,
+    size
+  );
+
+
+  ctx.strokeStyle="#080808";
+
+  ctx.lineWidth=4;
+
+
+  ctx.strokeRect(
+    -half,
+    -half,
+    size,
+    size
+  );
+
+
+  ctx.strokeStyle="#aaa";
+
+  ctx.lineWidth=5;
+
+
+  ctx.beginPath();
+
+  ctx.moveTo(
+    -half+8,
+    -half+8
+  );
+
+  ctx.lineTo(
+    half-8,
+    -half+8
+  );
+
+
+  ctx.moveTo(
+    -half+8,
+    half-8
+  );
+
+  ctx.lineTo(
+    half-8,
+    half-8
+  );
+
+
+  ctx.moveTo(
+    -half+8,
+    -half+8
+  );
+
+  ctx.lineTo(
+    -half+8,
+    half-8
+  );
+
+
+  ctx.moveTo(
+    half-8,
+    -half+8
+  );
+
+  ctx.lineTo(
+    half-8,
+    half-8
+  );
+
+
+  ctx.stroke();
+
+
+  ctx.fillStyle="#111";
+
+
+  ctx.fillRect(
+    -half*.65,
+    half-2,
+    half*1.3,
+    17
+  );
+
+
+  ctx.strokeStyle="#999";
+
+  ctx.lineWidth=3;
+
+
+  for(
+    let i=-1;
+    i<=1;
+    i++
+  ){
+
+    ctx.beginPath();
+
+    ctx.moveTo(
+      i*14,
+      half
+    );
+
+    ctx.lineTo(
+      i*14,
+      half+14
+    );
+
+    ctx.stroke();
+
+  }
+
+
+  ctx.fillStyle="#333";
+
+
+  ctx.fillRect(
+    -half*.52,
+    -half-13,
+    half*1.04,
+    13
+  );
+
+
+  ctx.strokeStyle="#888";
+
+  ctx.lineWidth=2;
+
+
+  ctx.strokeRect(
+    -half*.52,
+    -half-13,
+    half*1.04,
+    13
+  );
+
+
+  ctx.fillStyle="#303030";
+
+
+  ctx.fillRect(
+    -22,
+    -15,
+    44,
+    30
+  );
+
+
+  ctx.strokeStyle="#aaa";
+
+  ctx.lineWidth=2;
+
+
+  ctx.strokeRect(
+    -22,
+    -15,
+    44,
+    30
+  );
+
+
+  ctx.fillStyle="#555";
+
+
+  ctx.fillRect(
+    -27,
+    20,
+    54,
+    14
+  );
+
+
+  drawWheel(
+    -half-4,
+    -half+20
+  );
+
+  drawWheel(
+    half+4,
+    -half+20
+  );
+
+  drawWheel(
+    -half-4,
+    half-20
+  );
+
+  drawWheel(
+    half+4,
+    half-20
+  );
+
+
+  ctx.fillStyle="#eee";
+
+
+  ctx.beginPath();
+
+  ctx.moveTo(
+    0,
+    -half-24
+  );
+
+  ctx.lineTo(
+    -8,
+    -half-9
+  );
+
+  ctx.lineTo(
+    8,
+    -half-9
+  );
+
+  ctx.closePath();
+
+  ctx.fill();
+
+
+  if(
+    robot.balls>0
+  ){
+
+    ctx.fillStyle="#e7b21a";
+
+
+    ctx.beginPath();
+
+    ctx.arc(
+      0,
+      0,
+      9,
+      0,
+      Math.PI*2
+    );
+
+    ctx.fill();
+
+
+    ctx.fillStyle="#111";
+
+    ctx.font=
+      "bold 10px Arial";
+
+    ctx.textAlign="center";
+
+
+    ctx.fillText(
+      robot.balls,
+      0,
+      3
+    );
+
+  }
+
+
+  ctx.restore();
+
+}
+
+
+/* =========================================================
+   WHEEL
+========================================================= */
+
+function drawWheel(x,y){
+
+  ctx.save();
+
+  ctx.translate(
+    x,
+    y
+  );
+
+
+  ctx.fillStyle="#111";
+
+
+  ctx.fillRect(
+    -11,
+    -23,
+    22,
+    46
+  );
+
+
+  ctx.strokeStyle="#777";
+
+  ctx.lineWidth=2;
+
+
+  ctx.strokeRect(
+    -11,
+    -23,
+    22,
+    46
+  );
+
+
+  ctx.strokeStyle="#aaa";
+
+  ctx.lineWidth=3;
+
+
+  for(
+    let i=-15;
+    i<=15;
+    i+=10
+  ){
+
+    ctx.beginPath();
+
+    ctx.moveTo(
+      -8,
+      i
+    );
+
+    ctx.lineTo(
+      8,
+      i+7
+    );
+
+    ctx.stroke();
+
+  }
+
+
+  ctx.restore();
+
+}
+
+
+/* =========================================================
+   DRAW
+========================================================= */
+
+function draw(){
+
+  drawField();
+
+
+  for(
+    const b of balls
+  ){
+
+    drawBall(b);
+
+  }
+
+
+  drawHiveStructure();
+
+  drawRobot();
+
+}
+
+
+/* =========================================================
+   LOOP
+========================================================= */
+
+let lastTime=
+  performance.now();
+
+
+function loop(now){
+
+  let dt=
+    (now-lastTime)/1000;
+
+
+  lastTime=now;
+
+
+  dt=
+    Math.min(
+      dt,
+      .033
+    );
+
+
+  update(dt);
+
+  draw();
+
+
+  requestAnimationFrame(
+    loop
+  );
+
+}
+
+
+reset();
+
+requestAnimationFrame(
+  loop
+);
+
+</script>
+
+</body>
+</html>
