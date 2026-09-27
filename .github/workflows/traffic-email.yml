@@ -35,7 +35,7 @@ jobs:
             -H "Content-Type: application/json" \
             -d '{
               "from": "onboarding@resend.dev",
-              "to": ["YOUR_EMAIL_HERE"],
+              "to": ["lucasfielding3@gmail.com"],
               "subject": "👀 GitHub Traffic Test",
               "html": "<h2>GitHub Traffic Alert</h2><p>Your ftc_driving traffic checker is working.</p>"
             }'
