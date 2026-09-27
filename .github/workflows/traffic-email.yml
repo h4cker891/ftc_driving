@@ -6,14 +6,18 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   check-traffic:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check repository traffic
+      - name: Get repository
+        uses: actions/checkout@v4
+
+      - name: Check traffic
+        id: traffic
         env:
           GH_TOKEN: ${{ secrets.TRAFFIC_TOKEN }}
         run: |
@@ -24,9 +28,34 @@ jobs:
             "https://api.github.com/repos/h4cker891/ftc_driving/traffic/views?per=day" \
             > traffic.json
 
-          cat traffic.json
+          TODAY=$(python3 -c "
+          import json
+          with open('traffic.json') as f:
+              data=json.load(f)
+          print(data['views'][0]['count'] if data.get('views') else 0)
+          ")
 
-      - name: Send test email
+          echo "views=$TODAY" >> "$GITHUB_OUTPUT"
+
+          if [ -f traffic-state.txt ]; then
+            LAST=$(cat traffic-state.txt)
+          else
+            LAST=0
+          fi
+
+          echo "Previous views: $LAST"
+          echo "Current views: $TODAY"
+
+          if [ "$TODAY" -gt "$LAST" ]; then
+            echo "new_views=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "new_views=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "$TODAY" > traffic-state.txt
+
+      - name: Send email
+        if: steps.traffic.outputs.new_views == 'true'
         env:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
         run: |
@@ -36,6 +65,14 @@ jobs:
             -d '{
               "from": "onboarding@resend.dev",
               "to": ["lucasfielding3@gmail.com"],
-              "subject": "👀 GitHub Traffic Test",
-              "html": "<h2>GitHub Traffic Alert</h2><p>Your ftc_driving traffic checker is working.</p>"
+              "subject": "👀 New GitHub repo visit",
+              "html": "<h2>New visitor detected 👀</h2><p>Your <b>ftc_driving</b> repository has new recorded traffic.</p><p>Views today: '${{ steps.traffic.outputs.views }}'</p>"
             }'
+
+      - name: Save traffic count
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add traffic-state.txt
+          git diff --cached --quiet || git commit -m "Update traffic state"
+          git push
