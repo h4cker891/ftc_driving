@@ -1,0 +1,27 @@
+name: GitHub Traffic Alert
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-traffic:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check repository traffic
+        env:
+          GH_TOKEN: ${{ secrets.TRAFFIC_TOKEN }}
+        run: |
+          curl -s \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "https://api.github.com/repos/h4cker891/ftc_driving/traffic/views?per=day" \
+            > traffic.json
+
+          cat traffic.json
