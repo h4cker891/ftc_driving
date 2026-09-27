@@ -20,8 +20,22 @@ jobs:
           curl -s \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer $GH_TOKEN" \
-            -H "X-GitHub-Api-Version: 2026-03-10" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
             "https://api.github.com/repos/h4cker891/ftc_driving/traffic/views?per=day" \
             > traffic.json
 
           cat traffic.json
+
+      - name: Send test email
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+        run: |
+          curl -X POST "https://api.resend.com/emails" \
+            -H "Authorization: Bearer $RESEND_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "from": "onboarding@resend.dev",
+              "to": ["YOUR_EMAIL_HERE"],
+              "subject": "👀 GitHub Traffic Test",
+              "html": "<h2>GitHub Traffic Alert</h2><p>Your ftc_driving traffic checker is working.</p>"
+            }'
